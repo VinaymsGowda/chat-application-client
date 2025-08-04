@@ -37,6 +37,7 @@ const Sidebar = ({
   const [editUser, setEditUser] = useState(null);
   const dispatch = useDispatch();
   const currentUser = useSelector((state) => state.user.user);
+  const cloudFrontUrl = import.meta.env.VITE_CLOUD_FRONT_URL;
 
   const handleLogout = () => {
     dispatch(clearUser());
@@ -161,7 +162,9 @@ const Sidebar = ({
                           <img
                             src={
                               isGroup
-                                ? chat.groupProfile || groupProfile
+                                ? chat.groupProfile
+                                  ? `${cloudFrontUrl}/${chat.groupProfile}`
+                                  : groupProfile
                                 : otherUser?.profileURL || defaultProfile
                             }
                             alt={isGroup ? chat.groupName : otherUser?.name}

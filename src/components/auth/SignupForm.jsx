@@ -17,7 +17,7 @@ import {
   setUser,
   setError,
 } from "../../redux/features/Auth/User";
-import { useToast } from "../../App";
+import { useToast } from "../../context/ToastContext";
 
 const SignupForm = ({ onToggleForm }) => {
   const [name, setName] = useState("");
@@ -26,9 +26,19 @@ const SignupForm = ({ onToggleForm }) => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [validationError, setValidationError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [profilePic, setProfilePic] = useState(null);
+  const [profilePicPreview, setProfilePicPreview] = useState("");
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { showToast } = useToast();
+
+  const handleProfilePicChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setProfilePic(file);
+      setProfilePicPreview(URL.createObjectURL(file));
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -60,12 +70,19 @@ const SignupForm = ({ onToggleForm }) => {
         email,
         password
       );
-      const response = await createUser({
+
+      const data = new FormData();
+      const body = {
         name: name,
         email: email,
         authProviderId: userCredential.user.uid,
-        profileURL: userCredential.user.photoURL || "",
-      });
+      };
+      data.append("data", JSON.stringify(body));
+
+      if (profilePic) {
+        data.append("profilePic", profilePic);
+      }
+      const response = await createUser(data);
       if (response.status === 201) {
         await updateProfile(userCredential.user, { displayName: name });
         dispatch(setUser(response.data.data));
@@ -79,6 +96,8 @@ const SignupForm = ({ onToggleForm }) => {
         setEmail("");
         setPassword("");
         setConfirmPassword("");
+        setProfilePic(null);
+        setProfilePicPreview("");
         navigate("/chat");
       }
     } catch (error) {
@@ -109,7 +128,7 @@ const SignupForm = ({ onToggleForm }) => {
       };
 
       const res = await handleGooogleAuth(userData);
-      if (res.status === 200) {
+      if (res.status === 200 || res.status === 201) {
         dispatch(setUser(res.data.data));
       }
 
@@ -234,6 +253,29 @@ const SignupForm = ({ onToggleForm }) => {
               className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
+        </div>
+
+        <div>
+          <label
+            htmlFor="profilePic"
+            className="block text-sm font-medium text-gray-700 mb-1"
+          >
+            Profile picture (optional)
+          </label>
+          <input
+            id="profilePic"
+            type="file"
+            accept="image/*"
+            onChange={handleProfilePicChange}
+            className="w-full py-2 px-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+          {profilePicPreview && (
+            <img
+              src={profilePicPreview}
+              alt="Profile Preview"
+              className="mt-2 w-16 h-16 rounded-full object-cover border"
+            />
+          )}
         </div>
 
         <button

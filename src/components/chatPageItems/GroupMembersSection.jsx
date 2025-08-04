@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import defaultProfile from "../../assets/default-profile.png";
 import { UserPlus, UserMinus } from "lucide-react";
 import { MessageCircle } from "lucide-react";
+import { useToast } from "../../context/ToastContext";
 
 const GroupMembersSection = ({
   groupMembers,
@@ -10,10 +11,12 @@ const GroupMembersSection = ({
   setShowAddMembersModal,
   handleRemoveUser,
   onChatWithUser,
+  isGroupAdmin,
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [filteredMembers, setFilteredMembers] = useState(groupMembers);
   const [viewAll, setViewAll] = useState(false);
+  const { showToast } = useToast();
 
   // Filter the group members based on the search query
   useEffect(() => {
@@ -43,12 +46,23 @@ const GroupMembersSection = ({
             ({filteredMembers.length})
           </span>
         </h3>
-        <button
-          className="flex items-center cursor-pointer gap-1 px-2 py-1 text-xs font-medium bg-indigo-50 text-indigo-700 rounded hover:bg-indigo-100 transition"
-          onClick={() => setShowAddMembersModal(true)}
-        >
-          <UserPlus size={16} /> Add Members
-        </button>
+        {isGroupAdmin && (
+          <button
+            className="flex items-center cursor-pointer gap-1 px-2 py-1 text-xs font-medium bg-indigo-50 text-indigo-700 rounded hover:bg-indigo-100 transition"
+            onClick={() => {
+              if (!isGroupAdmin) {
+                showToast({
+                  type: "warning",
+                  title: "Only group admins can add new members",
+                });
+                return;
+              }
+              setShowAddMembersModal(true);
+            }}
+          >
+            <UserPlus size={16} /> Add Members
+          </button>
+        )}
       </div>
 
       {/* Search Bar */}
@@ -109,7 +123,16 @@ const GroupMembersSection = ({
                     <button
                       className="ml-2 px-2 py-1 cursor-pointer text-xs font-medium bg-red-100 text-red-700 rounded hover:bg-red-200 transition flex items-center gap-1"
                       title="Remove user"
-                      onClick={() => handleRemoveUser(member.id)}
+                      onClick={() => {
+                        if (!isGroupAdmin) {
+                          showToast({
+                            type: "warning",
+                            title: "Only group admins can add new members",
+                          });
+                          return;
+                        }
+                        handleRemoveUser(member.id);
+                      }}
                     >
                       <UserMinus size={14} className="text-red-500" /> Remove
                     </button>

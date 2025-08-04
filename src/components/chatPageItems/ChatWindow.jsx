@@ -16,7 +16,7 @@ import { sendMessageService } from "../../services/messageService";
 import { getOtherUser } from "../../helper/utils";
 
 import ChatInfoWindow from "./ChatInfoWindow";
-import { useToast } from "../../App";
+import { useToast } from "../../context/ToastContext";
 import { isAxiosError } from "axios";
 
 const ChatWindow = ({
@@ -31,6 +31,8 @@ const ChatWindow = ({
   addNewChat,
   fetchChats,
 }) => {
+  const cloudFrontUrl = import.meta.env.VITE_CLOUD_FRONT_URL;
+
   if (!selectedChat) {
     return (
       <div className="h-full flex items-center justify-center p-8 bg-gray-50">
@@ -49,7 +51,6 @@ const ChatWindow = ({
     );
   }
   const messagesEndRef = useRef(null);
-
   const [messages, setMessages] = useState([]);
   const [isShowInfo, setIsShowInfo] = useState(false);
 
@@ -99,7 +100,9 @@ const ChatWindow = ({
     if (selectedChat.chatType === "group") {
       return {
         title: selectedChat.groupName || "Group selectedChat",
-        avatar: selectedChat.groupProfile || groupProfile,
+        avatar: selectedChat.groupProfile
+          ? `${cloudFrontUrl}/${selectedChat.groupProfile}`
+          : groupProfile,
       };
     } else {
       const otherUser = getOtherUser(selectedChat, currentUser);
@@ -116,10 +119,10 @@ const ChatWindow = ({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const sendMessage = async (message, isImage, imageData) => {
+  const sendMessage = async (message, messageType, selectedFile = null) => {
     const data = {
       content: message,
-      type: isImage ? "image" : "text",
+      type: messageType,
       chatId: selectedChat.id,
     };
 
@@ -129,7 +132,13 @@ const ChatWindow = ({
       data.receiverId = otherUser.id;
     }
 
-    const response = await sendMessageService(data);
+    const formData = new FormData();
+
+    formData.append("data", JSON.stringify(data));
+    if (selectedFile) {
+      formData.append("file", selectedFile);
+    }
+    const response = await sendMessageService(formData);
 
     if (response.status === 201) {
       const newMessage = response.data.data;
@@ -248,7 +257,7 @@ const ChatWindow = ({
     }
   };
 
-  const handelChatUpdate = async (data) => {
+  const handleChatUpdate = async (data) => {
     try {
       if (selectedChat && currentUser.id === selectedChat.groupAdminId) {
         const response = await updateChatById(selectedChat?.id, data);
@@ -419,7 +428,7 @@ const ChatWindow = ({
           handleLeaveGroup={handleLeaveGroupChat}
           handleAddNewMembers={handleAddNewMembers}
           handleRemoveUser={handleRemoveUser}
-          onRenameGroup={handelChatUpdate}
+          handleChatUpdate={handleChatUpdate}
           onChatWithUser={getChatWithUser}
         />
       )}

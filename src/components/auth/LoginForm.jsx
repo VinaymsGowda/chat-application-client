@@ -18,7 +18,7 @@ import {
   setUser,
   setError,
 } from "../../redux/features/Auth/User";
-import { useToast } from "../../App";
+import { useToast } from "../../context/ToastContext";
 
 const LoginForm = ({ onToggleForm }) => {
   const [email, setEmail] = useState("");
@@ -87,7 +87,7 @@ const LoginForm = ({ onToggleForm }) => {
       };
 
       const res = await handleGooogleAuth(userData);
-      if (res.status === 200) {
+      if (res.status === 200 || res.status === 201) {
         dispatch(setUser(res.data.data));
       }
 

@@ -8,9 +8,8 @@ import { useSelector } from "react-redux";
 import { selectUser } from "../../redux/features/Auth/User";
 import { io } from "socket.io-client";
 import { searchUsers } from "../../services/userService";
-import DialogWrapper from "../../wrappers/DialogWrapper";
 import CreateGroupModal from "../../components/chatPageItems/CreateGroupModal";
-import { useToast } from "../../App";
+import { useToast } from "../../context/ToastContext";
 
 // Define only ONCE, outside the component
 const socket = io(import.meta.env.VITE_SERVER_URL, {
@@ -134,7 +133,11 @@ function ChatPage() {
     }
   }, [isCreateGroupModalOpen, createGroupUserSearch]);
 
-  const handleCreateGroupChat = async (groupName, selectedUsers) => {
+  const handleCreateGroupChat = async (
+    groupName,
+    selectedUsers,
+    groupProfile
+  ) => {
     try {
       selectedUsers.push(currentUser);
 
@@ -142,11 +145,18 @@ function ChatPage() {
 
       const newGroupChatPayload = {
         groupName: groupName,
-        groupProfile: undefined,
         userIds: selectedUsersWithIds,
       };
 
-      const response = await createGroupChat(newGroupChatPayload);
+      const body = new FormData();
+
+      body.append("data", JSON.stringify(newGroupChatPayload));
+
+      if (groupProfile) {
+        body.append("groupProfile", groupProfile);
+      }
+
+      const response = await createGroupChat(body);
       if (response.status === 201) {
         const newChat = {
           ...response.data.data,
@@ -239,21 +249,20 @@ function ChatPage() {
 
       {/* Create group modal */}
 
-      <DialogWrapper
+      <CreateGroupModal
         open={isCreateGroupModalOpen}
-        onOpenChange={setIsCreateGroupModalOpen}
-        title={"Create New Group"}
-      >
-        <CreateGroupModal
-          createGroupErrorMessage={createGroupErrorMessage}
-          handleCreateGroupChat={handleCreateGroupChat}
-          setCreateGroupErrorMessage={setCreateGroupErrorMessage}
-          users={users}
-          onClose={() => setIsCreateGroupModalOpen(false)}
-          createGroupUserSearch={createGroupUserSearch}
-          setCreateGroupUserSearch={setCreateGroupUserSearch}
-        />
-      </DialogWrapper>
+        onOpenChange={() => {
+          setIsCreateGroupModalOpen(false);
+          setCreateGroupErrorMessage("");
+        }}
+        createGroupErrorMessage={createGroupErrorMessage}
+        handleCreateGroupChat={handleCreateGroupChat}
+        setCreateGroupErrorMessage={setCreateGroupErrorMessage}
+        users={users}
+        onClose={() => setIsCreateGroupModalOpen(false)}
+        createGroupUserSearch={createGroupUserSearch}
+        setCreateGroupUserSearch={setCreateGroupUserSearch}
+      />
     </div>
   );
 }
