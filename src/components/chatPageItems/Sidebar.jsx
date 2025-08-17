@@ -14,30 +14,52 @@ import {
 
 import { useDispatch, useSelector } from "react-redux";
 import { clearUser, setUser } from "../../redux/features/Auth/User";
+import {
+  setSelectedChat,
+  setSearchQuery,
+  fetchChats,
+  selectSelectedChat,
+  selectChats,
+  selectOtherUsers,
+  selectSearchQuery,
+} from "../../redux/features/Chat/Chat";
 import defaultProfile from "../../assets/default-profile.png";
 import groupProfile from "../../assets/group-profile.png";
-import { useNavigate } from "react-router-dom";
+
 import { getOtherUser } from "../../helper/utils";
 import DialogWrapper from "../../wrappers/DialogWrapper";
 import ProfileModal from "./profileModal";
 import { updateUser } from "../../services/userService";
+import { useNavigate } from "react-router-dom";
 
-const Sidebar = ({
-  chats,
-  otherUsers = [],
-  handleChatSelection,
-  selectedChat,
-  searchQuery,
-  setSearchQuery,
-  onStartChat,
-  setIsCreateGroupModalOpen,
-}) => {
+const Sidebar = ({ setIsCreateGroupModalOpen }) => {
   const [isUserSearchOpen, setIsUserSearchOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [editUser, setEditUser] = useState(null);
   const dispatch = useDispatch();
   const currentUser = useSelector((state) => state.user.user);
   const cloudFrontUrl = import.meta.env.VITE_CLOUD_FRONT_URL;
+
+  const navigate = useNavigate();
+
+  // Redux selectors
+  const selectedChat = useSelector(selectSelectedChat);
+  const chats = useSelector(selectChats);
+  const otherUsers = useSelector(selectOtherUsers);
+  const searchQuery = useSelector(selectSearchQuery);
+
+  // Fetch chats when component mounts and when searchQuery changes
+  useEffect(() => {
+    const interval = setTimeout(() => {
+      if (currentUser) {
+        dispatch(fetchChats(searchQuery));
+      }
+    }, 600);
+
+    return () => {
+      clearTimeout(interval);
+    };
+  }, [searchQuery, currentUser, dispatch]);
 
   const handleLogout = () => {
     dispatch(clearUser());
@@ -52,21 +74,56 @@ const Sidebar = ({
     setIsProfileOpen(false);
   };
 
-  const handleProfileSave = async () => {
+  const handleProfileSave = async (data) => {
     try {
-      const updatePayload = {
-        name: editUser.name,
-      };
-      const response = await updateUser(updatePayload);
+      const response = await updateUser(data, currentUser.id);
 
       if (response.status === 200) {
-        dispatch(setUser(response?.data?.data));
+        if (
+          response.data.data &&
+          Array.isArray(response.data.data) &&
+          response.data.data.length > 0
+        )
+          dispatch(setUser(response?.data?.data[0]));
       }
     } catch (error) {
       console.log("Error occurred", error);
     } finally {
       setIsProfileOpen(false);
     }
+  };
+
+  const handleChatSelection = (chat) => {
+    dispatch(setSelectedChat(chat));
+    navigate(`/chat/${chat.id}`, {
+      state: {
+        isNewChat: false,
+      },
+    });
+  };
+
+  const handleStartChat = (user) => {
+    // initiate new chat with user
+    const newChat = {
+      id: "new-chat",
+      chatType: user.id === currentUser.id ? "self" : "one_to_one",
+      groupName: null,
+      groupProfile: null,
+      latestMessage: null,
+      users: user.id === currentUser.id ? [currentUser] : [currentUser, user],
+    };
+
+    dispatch(setSelectedChat(newChat));
+
+    navigate("/chat/new-chat", {
+      state: {
+        isNewChat: true,
+      },
+    });
+  };
+
+  const handleSearchQueryChange = (e) => {
+    dispatch(setSearchQuery(e.target.value));
   };
 
   return (
@@ -126,7 +183,7 @@ const Sidebar = ({
               isUserSearchOpen ? "Search users..." : "Search chats..."
             }
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={handleSearchQueryChange}
             className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-full bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
           />
         </div>
@@ -165,7 +222,9 @@ const Sidebar = ({
                                 ? chat.groupProfile
                                   ? `${cloudFrontUrl}/${chat.groupProfile}`
                                   : groupProfile
-                                : otherUser?.profileURL || defaultProfile
+                                : otherUser?.profileURL
+                                ? `${cloudFrontUrl}/${otherUser.profileURL}`
+                                : defaultProfile
                             }
                             alt={isGroup ? chat.groupName : otherUser?.name}
                             className="w-12 h-12 rounded-full object-cover mr-3"
@@ -223,12 +282,16 @@ const Sidebar = ({
                       key={user.id}
                       onClick={(e) => {
                         e.stopPropagation();
-                        onStartChat && onStartChat(user);
+                        handleStartChat(user);
                       }}
                       className="flex items-center px-4 py-2 hover:bg-gray-50 border-b border-gray-100"
                     >
                       <img
-                        src={user.profileURL || defaultProfile}
+                        src={
+                          user.profileURL
+                            ? `${cloudFrontUrl}/${user.profileURL}`
+                            : defaultProfile
+                        }
                         alt={user.name}
                         className="w-10 h-10 rounded-full object-cover mr-3"
                         onError={(e) => {

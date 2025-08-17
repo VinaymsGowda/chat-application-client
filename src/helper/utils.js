@@ -7,3 +7,5 @@ export const getOtherUser = (chat, currentUser) => {
   }
   return null;
 };
+
+export const cloudFrontUrl = import.meta.env.VITE_CLOUD_FRONT_URL;

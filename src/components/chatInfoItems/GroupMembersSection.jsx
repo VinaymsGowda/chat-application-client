@@ -3,20 +3,25 @@ import defaultProfile from "../../assets/default-profile.png";
 import { UserPlus, UserMinus } from "lucide-react";
 import { MessageCircle } from "lucide-react";
 import { useToast } from "../../context/ToastContext";
+import { useSelector } from "react-redux";
+import { selectUser } from "../../redux/features/Auth/User";
+import { cloudFrontUrl } from "../../helper/utils";
 
 const GroupMembersSection = ({
   groupMembers,
-  currentUser,
+
   selectedChat,
   setShowAddMembersModal,
   handleRemoveUser,
   onChatWithUser,
-  isGroupAdmin,
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [filteredMembers, setFilteredMembers] = useState(groupMembers);
   const [viewAll, setViewAll] = useState(false);
   const { showToast } = useToast();
+  const currentUser = useSelector(selectUser);
+  const isGroupAdmin =
+    currentUser && selectedChat && selectedChat.groupAdminId === currentUser.id;
 
   // Filter the group members based on the search query
   useEffect(() => {
@@ -38,7 +43,7 @@ const GroupMembersSection = ({
     ? filteredMembers // Show all if "View All" is toggled
     : filteredMembers.slice(0, 5); // Default to showing 5 members if no search
   return (
-    <div className="w-full bg-white rounded-xl shadow-sm p-4 border border-gray-100">
+    <div className="w-full   shadow-sm p-4 border border-gray-100">
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-sm font-semibold text-gray-700">
           Group Members{" "}
@@ -83,7 +88,11 @@ const GroupMembersSection = ({
             <li className="flex items-center justify-between py-3 px-2 hover:bg-gray-50 rounded-lg transition group">
               <div className="flex items-center gap-3">
                 <img
-                  src={member.profileURL || defaultProfile}
+                  src={
+                    member?.profileURL
+                      ? `${cloudFrontUrl}/${member.profileURL}`
+                      : defaultProfile
+                  }
                   alt={member.name}
                   className="w-10 h-10 rounded-full object-cover border border-gray-200"
                   onError={(e) => {
@@ -131,7 +140,7 @@ const GroupMembersSection = ({
                           });
                           return;
                         }
-                        handleRemoveUser(member.id);
+                        handleRemoveUser(member);
                       }}
                     >
                       <UserMinus size={14} className="text-red-500" /> Remove

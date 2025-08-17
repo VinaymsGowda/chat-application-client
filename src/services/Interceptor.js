@@ -24,8 +24,7 @@ axiosInstance.interceptors.response.use(
   },
   async (error) => {
     if (error.response.status === 401) {
-      localStorage.removeItem("token");
-      localStorage.removeItem("persist:user");
+      localStorage.clear();
       window.location.href = "/";
     }
     // Do something with response error

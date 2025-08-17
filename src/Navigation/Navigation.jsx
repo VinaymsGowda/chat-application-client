@@ -2,10 +2,11 @@ import React from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import LandingPage from "../pages/LandingPage";
 import { AuthPage } from "../pages/Auth/AuthPage";
-import ChatPage from "../pages/Chat/ChatPage";
+
 import ProfilePage from "../pages/Profile/ProfilePage";
 import ProtectedRoutes from "./ProtectedRoutes";
 import PublicRoutes from "./PublicRoutes";
+import ChatNavigation from "./ChatNavigation";
 
 function Navigation() {
   return (
@@ -13,10 +14,14 @@ function Navigation() {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/auth" element={<PublicRoutes element={<AuthPage />} />} />
-
+        {/* 
         <Route
           path="/chat"
           element={<ProtectedRoutes element={<ChatPage />} />}
+        /> */}
+        <Route
+          path="/chat/*"
+          element={<ProtectedRoutes element={<ChatNavigation />} />}
         />
         <Route
           path="/profile"

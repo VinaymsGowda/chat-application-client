@@ -24,7 +24,12 @@ export const fetchUserByAuthProviderId = async (authProviderId) => {
   return response;
 };
 
-export const updateUser = async (data) => {
-  const response = await axiosInstance.patch("/api/users", data);
+export const updateUser = async (data, id) => {
+  const response = await axiosInstance.patch(`/api/users/${id}`, data);
+  return response;
+};
+
+export const fetchUserById = async (id) => {
+  const response = await axiosInstance.get(`/api/users/${id}`);
   return response;
 };

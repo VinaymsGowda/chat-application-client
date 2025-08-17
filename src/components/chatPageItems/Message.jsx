@@ -2,10 +2,12 @@ import React from "react";
 import defaultProfile from "../../assets/default-profile.png";
 
 const Message = ({ message, isCurrentUser, sender, isGroup }) => {
-  const profileImg = sender?.profileURL || defaultProfile;
   const cloudFrontUrl = import.meta.env.VITE_CLOUD_FRONT_URL;
   const attachmentUrl = `${cloudFrontUrl}/${message.imagePath}`;
 
+  const profileImg = sender?.profileURL
+    ? `${cloudFrontUrl}/${sender.profileURL}`
+    : defaultProfile;
   const renderMessageContent = () => {
     switch (message.type) {
       case "text":

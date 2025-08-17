@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import defaultProfile from "../../assets/default-profile.png";
 import * as Dialog from "@radix-ui/react-dialog";
+import { cloudFrontUrl } from "../../helper/utils";
 
 function CreateGroupModal({
   open,
@@ -18,6 +19,15 @@ function CreateGroupModal({
   const [groupProfile, setGroupProfile] = useState(null);
   const [groupProfilePreview, setGroupProfilePreview] = useState(null);
 
+  useEffect(() => {
+    setGroupName("");
+    setSelectedUsers([]);
+    setGroupProfile(null);
+    setCreateGroupErrorMessage("");
+    setCreateGroupUserSearch("");
+    setGroupProfilePreview(null);
+  }, [open]);
+
   const handleGroupProfileChange = (e) => {
     const file = e.target.files[0];
     setGroupProfile(file);
@@ -32,7 +42,7 @@ function CreateGroupModal({
     }
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
 
     if (!groupName.trim()) {
@@ -45,12 +55,8 @@ function CreateGroupModal({
       return;
     }
 
-    handleCreateGroupChat(groupName, selectedUsers, groupProfile);
+    await handleCreateGroupChat(groupName, selectedUsers, groupProfile);
   };
-
-  useEffect(() => {
-    console.log("Selected users ", selectedUsers);
-  }, [selectedUsers]);
 
   const toggleUserSelection = (user) => {
     if (selectedUsers.includes(user)) {
@@ -194,7 +200,11 @@ function CreateGroupModal({
                         className="h-4 w-4 text-indigo-600 rounded mr-3"
                       />
                       <img
-                        src={user?.profileURL || defaultProfile}
+                        src={
+                          user?.profileURL
+                            ? `${cloudFrontUrl}/${user.profileURL}`
+                            : defaultProfile
+                        }
                         alt={user.name}
                         className="w-8 h-8 rounded-full object-cover mr-3"
                       />

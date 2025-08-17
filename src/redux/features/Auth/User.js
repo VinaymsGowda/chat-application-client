@@ -50,8 +50,7 @@ export const {
 export const selectUser = (state) => state?.user?.user || null;
 export const selectIsAuthenticated = (state) => {
   const token = localStorage.getItem("token");
-
-  return state?.user?.isAuthenticated && token ? true : false;
+  return state?.user && token ? true : false;
 };
 export const selectUserLoading = (state) => state?.user?.loading || false;
 export const selectUserError = (state) => state?.user?.error || null;
