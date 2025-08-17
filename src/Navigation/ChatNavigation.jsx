@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useSocket } from "../context/SocketContext";
-import { Route, Routes, useNavigate } from "react-router-dom";
+import { Route, Routes, useNavigate, useLocation } from "react-router-dom";
 import Conversations from "../pages/Chat/Conversations";
 import ChatInfo from "../pages/Chat/ChatInfo";
 import Chat from "../pages/Chat/Chat";
@@ -22,18 +22,22 @@ function ChatNavigation() {
   const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
   const [createGroupUserSearch, setCreateGroupUserSearch] = useState("");
   const [createGroupErrorMessage, setCreateGroupErrorMessage] = useState("");
+  const [users, setUsers] = useState([]);
 
   const dispatch = useDispatch();
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation(); // 👈 to detect current route
   const { socket } = useSocket();
   const selectedChat = useSelector(selectSelectedChat);
-  // First useEffect - runs immediately on mount
+  const currentUser = useSelector(selectUser);
+
+  // Fetch chats on mount
   useEffect(() => {
     dispatch(fetchChats(""));
   }, [dispatch]);
 
-  // Second useEffect - sets up socket listener
+  // Socket listeners
   useEffect(() => {
     const handleNewChatReceived = () => {
       dispatch(fetchChats(""));
@@ -41,28 +45,27 @@ function ChatNavigation() {
 
     const handleRemovedFromGroup = (chatId) => {
       dispatch(fetchChats(""));
-      if (selectedChat && selectedChat.id == chatId) {
+      if (selectedChat && selectedChat.id === chatId) {
         dispatch(setSelectedChat(null));
         navigate("/chat");
       }
     };
 
     socket.on("new-chat-received", handleNewChatReceived);
-
     socket.on("removed-from-group", handleRemovedFromGroup);
 
     return () => {
       socket.off("new-chat-received", handleNewChatReceived);
       socket.off("removed-from-group", handleRemovedFromGroup);
     };
-  }, [dispatch, socket]);
+  }, [dispatch, socket, selectedChat, navigate]);
 
+  // Fetch users when modal opens
   useEffect(() => {
     if (isCreateGroupModalOpen) {
       getUsersForGroupChat();
     }
   }, [isCreateGroupModalOpen, createGroupUserSearch]);
-  const [users, setUsers] = useState([]);
 
   const getUsersForGroupChat = async () => {
     try {
@@ -73,10 +76,9 @@ function ChatNavigation() {
     } catch (error) {
       console.log("Error occurred");
       setUsers([]);
-      setCreateGroupErrorMessage(error.messge);
+      setCreateGroupErrorMessage(error.message);
     }
   };
-  const currentUser = useSelector(selectUser);
 
   const handleCreateGroupChat = async (
     groupName,
@@ -94,7 +96,6 @@ function ChatNavigation() {
       };
 
       const body = new FormData();
-
       body.append("data", JSON.stringify(newGroupChatPayload));
 
       if (groupProfile) {
@@ -109,9 +110,7 @@ function ChatNavigation() {
         socket.emit("new-chat", selectedUsers);
 
         navigate(`/chat/${chat.id}`, {
-          state: {
-            isNewChat: false,
-          },
+          state: { isNewChat: false },
         });
         showToast({
           title: "Group Created",
@@ -121,15 +120,31 @@ function ChatNavigation() {
     } catch (error) {}
   };
 
+  // 👇 Logic to hide/show sidebar vs content on small devices
+  const isChatListPage = location.pathname === "/chat";
+
   return (
     <div className="h-screen flex">
-      {/* Sidebar (fixed width) */}
-      <div className="w-[30vw] border-r border-gray-200">
+      {/* Sidebar */}
+      <div
+        className={`
+          border-r border-gray-200 
+          ${isChatListPage ? "block" : "hidden"} 
+          md:block
+          w-full md:w-[30vw]
+        `}
+      >
         <Sidebar setIsCreateGroupModalOpen={setIsCreateGroupModalOpen} />
       </div>
 
-      {/* Main content (takes remaining space) */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Main content */}
+      <div
+        className={`
+          flex-1 overflow-y-auto
+          ${isChatListPage ? "hidden" : "block"}
+          md:block
+        `}
+      >
         <Routes>
           <Route path="/" element={<Conversations />} />
           <Route path="/:id" element={<Chat />} />
