@@ -65,3 +65,8 @@ export const getChatOfSelectedUser = async (userId) => {
   const response = await axiosInstance.get(`/api/chat/user/${userId}`);
   return response;
 };
+
+export const getChatInfo = async (chatId) => {
+  const response = await axiosInstance.get(`/api/chat/${chatId}`);
+  return response;
+};

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import defaultProfile from "../../assets/default-profile.png";
+import { cloudFrontUrl } from "../../helper/utils";
 
 function AddMembersModal({
   users = [],
@@ -57,7 +58,11 @@ function AddMembersModal({
 
             {/* Profile Picture */}
             <img
-              src={user?.profileURL || defaultProfile}
+              src={
+                user?.profileURL
+                  ? `${cloudFrontUrl}/${user.profileURL}`
+                  : defaultProfile
+              }
               alt={user.name}
               className="w-8 h-8 rounded-full object-cover mr-3"
             />
