@@ -76,7 +76,7 @@ function ChatNavigation() {
     } catch (error) {
       console.log("Error occurred");
       setUsers([]);
-      setCreateGroupErrorMessage(error.message);
+      setCreateGroupErrorMessage("");
     }
   };
 

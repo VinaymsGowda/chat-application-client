@@ -216,12 +216,16 @@ function Chat() {
           ) : null}
         </div>
         <div className="flex space-x-2 flex-shrink-0">
-          <button className="p-2 hover:bg-gray-100 rounded-full transition">
-            <Phone size={18} className="text-gray-600" />
-          </button>
-          <button className="p-2 hover:bg-gray-100 rounded-full transition">
-            <Video size={18} className="text-gray-600" />
-          </button>
+          {selectedChat && selectedChat.chatType != "self" && (
+            <>
+              <button className="p-2 hover:bg-gray-100 rounded-full transition">
+                <Phone size={18} className="text-gray-600" />
+              </button>
+              <button className="p-2 hover:bg-gray-100 rounded-full transition">
+                <Video size={18} className="text-gray-600" />
+              </button>
+            </>
+          )}
           <button
             className="p-2 hover:bg-gray-100 rounded-full transition"
             onClick={() => {
