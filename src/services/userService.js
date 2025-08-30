@@ -10,10 +10,11 @@ export const handleGooogleAuth = async (userData) => {
   return response;
 };
 
-export const searchUsers = async (query) => {
+export const searchUsers = async (query, isGroup = false) => {
   const response = await axiosInstance.get("/api/users/", {
     params: {
       query: query,
+      isGroup: isGroup,
     },
   });
   return response;

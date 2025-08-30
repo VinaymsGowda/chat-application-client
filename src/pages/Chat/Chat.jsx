@@ -17,6 +17,9 @@ import MessageInput from "../../components/chatPageItems/MessageInput";
 import { sendMessageService } from "../../services/messageService";
 import { useSocket } from "../../context/SocketContext";
 
+import { useMedia } from "../../context/MediaProvider";
+import { useToast } from "../../context/ToastContext";
+
 function Chat() {
   const locationState = useLocation().state;
   const isNewChat = locationState?.isNewChat;
@@ -31,6 +34,14 @@ function Chat() {
 
   const currentUser = useSelector(selectUser);
   const { socket } = useSocket();
+  const { showToast } = useToast();
+  const {
+    openMediaDevices,
+    callState,
+    setCallState,
+    setPeerDetails,
+    makeCall,
+  } = useMedia();
 
   const getMessagesOfSelectedChat = async () => {
     try {
@@ -73,6 +84,44 @@ function Chat() {
       socket?.off("message-received", handleMessageReceived);
     };
   }, [id, isNewChat]);
+
+  const handleAudioCall = async () => {
+    if (callState !== "idle") {
+      showToast({
+        title: "Please end ongoing call to start a new call",
+        type: "warning",
+      });
+      return;
+    }
+    setPeerDetails(getOtherUser(selectedChat, currentUser));
+    const stream = await openMediaDevices({ audio: true });
+
+    const offer = await makeCall();
+    setCallState("calling");
+    socket.emit("initiate-call", selectedChat, "audio", offer, currentUser);
+  };
+
+  const handleVideoCall = async () => {
+    if (callState !== "idle") {
+      showToast({
+        title: "Please end ongoing call to start a new call",
+        type: "warning",
+      });
+      return;
+    }
+    setPeerDetails(getOtherUser(selectedChat, currentUser));
+    const stream = await openMediaDevices({
+      video: {
+        width: 375,
+        height: 350,
+      },
+      audio: true,
+    });
+
+    const offer = await makeCall();
+    setCallState("calling");
+    socket.emit("initiate-call", selectedChat, "video", offer, currentUser);
+  };
 
   useEffect(() => {
     if (!isNewChat && id) {
@@ -216,12 +265,18 @@ function Chat() {
           ) : null}
         </div>
         <div className="flex space-x-2 flex-shrink-0">
-          {selectedChat && selectedChat.chatType != "self" && (
+          {selectedChat && selectedChat.chatType == "one_to_one" && (
             <>
-              <button className="p-2 hover:bg-gray-100 rounded-full transition">
+              <button
+                className="p-2 hover:bg-gray-100 rounded-full transition"
+                onClick={handleAudioCall}
+              >
                 <Phone size={18} className="text-gray-600" />
               </button>
-              <button className="p-2 hover:bg-gray-100 rounded-full transition">
+              <button
+                className="p-2 hover:bg-gray-100 rounded-full transition"
+                onClick={handleVideoCall}
+              >
                 <Video size={18} className="text-gray-600" />
               </button>
             </>
