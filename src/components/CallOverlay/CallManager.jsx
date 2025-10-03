@@ -14,66 +14,78 @@ const CallManager = () => {
     openMediaDevices,
     createAnswer,
     peerDetails,
+    endCall,
   } = useMedia();
   const { socket } = useSocket();
   const { incomingCallData, setIncomingCallData } = useMedia();
   const currentUser = useSelector(selectUser);
 
   const handleAcceptCall = async (callData) => {
-    if (!callData) return;
-
-    if (callData.type === "audio") {
-      const stream = await openMediaDevices({ audio: true });
-      if (stream.active) {
-        const answer = await createAnswer(callData.offer);
-        socket.emit("send-answer", {
-          to: callData.from.id,
-          offer: answer,
-          callee: currentUser,
-        });
-        setCallState("ongoing");
-      }
+    if (!callData) {
+      console.error("No call data provided");
+      return;
     }
 
-    if (callData.type === "video") {
-      const stream = await openMediaDevices({
-        video: { width: 375, height: 350 },
-        audio: true,
-      });
-      if (stream.active) {
-        const answer = await createAnswer(callData.offer);
-        socket.emit("send-answer", {
-          to: callData.from.id,
-          offer: answer,
-          callee: currentUser,
-        });
-        setCallState("ongoing");
+    if (!callData.offer) {
+      console.error("No offer in call data:", callData);
+      setCallState("idle");
+      return;
+    }
+
+    try {
+      if (callData.type === "audio") {
+        const stream = await openMediaDevices({ audio: true });
+        if (stream && stream.active) {
+          const answer = await createAnswer(callData.offer);
+          socket.emit("send-answer", {
+            to: callData.from.id,
+            offer: answer,
+            callee: currentUser,
+          });
+          setCallState("ongoing");
+        }
       }
+
+      if (callData.type === "video") {
+        const stream = await openMediaDevices({
+          video: { width: 375, height: 350 },
+          audio: true,
+        });
+        if (stream && stream.active) {
+          const answer = await createAnswer(callData.offer);
+          socket.emit("send-answer", {
+            to: callData.from.id,
+            offer: answer,
+            callee: currentUser,
+          });
+          setCallState("ongoing");
+        }
+      }
+    } catch (error) {
+      console.error("Error accepting call:", error);
+      setCallState("idle");
+      // You might want to show a toast notification h
     }
   };
-
   return (
     <>
       {callState === "incoming" && (
         <IncomingCallOverlay
           callerName={peerDetails?.name}
           onAccept={() => handleAcceptCall(incomingCallData)}
-          onReject={() => setCallState("idle")}
+          onReject={endCall}
         />
       )}
 
       {callState === "ongoing" && (
         <OngoingCallOverlay
           calleeName={peerDetails?.name}
-          onEndCall={() => setCallState("idle")}
+          onEndCall={endCall}
         />
       )}
 
       {callState === "calling" && (
-        <CallingOverlay
-          calleeName={peerDetails?.name}
-          onCancel={() => setCallState("idle")}
-        />
+        <CallingOverlay calleeName={peerDetails?.name} onCancel={endCall} />
       )}
     </>
   );

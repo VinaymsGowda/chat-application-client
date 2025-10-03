@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { getMessagesByChatId } from "../../services/chatServices";
 import { cloudFrontUrl, getOtherUser } from "../../helper/utils";
@@ -11,14 +11,12 @@ import {
 } from "../../redux/features/Chat/Chat";
 import defaultProfile from "../../assets/default-profile.png";
 import groupProfile from "../../assets/group-profile.png";
-import { ArrowLeft, Info, Phone, Video } from "lucide-react";
+import { ArrowLeft, Info } from "lucide-react";
 import Message from "../../components/chatPageItems/Message";
 import MessageInput from "../../components/chatPageItems/MessageInput";
+import CallInitiationButtons from "../../components/chatPageItems/CallInitiationButtons";
 import { sendMessageService } from "../../services/messageService";
 import { useSocket } from "../../context/SocketContext";
-
-import { useMedia } from "../../context/MediaProvider";
-import { useToast } from "../../context/ToastContext";
 
 function Chat() {
   const locationState = useLocation().state;
@@ -34,14 +32,6 @@ function Chat() {
 
   const currentUser = useSelector(selectUser);
   const { socket } = useSocket();
-  const { showToast } = useToast();
-  const {
-    openMediaDevices,
-    callState,
-    setCallState,
-    setPeerDetails,
-    makeCall,
-  } = useMedia();
 
   const getMessagesOfSelectedChat = async () => {
     try {
@@ -84,44 +74,6 @@ function Chat() {
       socket?.off("message-received", handleMessageReceived);
     };
   }, [id, isNewChat]);
-
-  const handleAudioCall = async () => {
-    if (callState !== "idle") {
-      showToast({
-        title: "Please end ongoing call to start a new call",
-        type: "warning",
-      });
-      return;
-    }
-    setPeerDetails(getOtherUser(selectedChat, currentUser));
-    const stream = await openMediaDevices({ audio: true });
-
-    const offer = await makeCall();
-    setCallState("calling");
-    socket.emit("initiate-call", selectedChat, "audio", offer, currentUser);
-  };
-
-  const handleVideoCall = async () => {
-    if (callState !== "idle") {
-      showToast({
-        title: "Please end ongoing call to start a new call",
-        type: "warning",
-      });
-      return;
-    }
-    setPeerDetails(getOtherUser(selectedChat, currentUser));
-    const stream = await openMediaDevices({
-      video: {
-        width: 375,
-        height: 350,
-      },
-      audio: true,
-    });
-
-    const offer = await makeCall();
-    setCallState("calling");
-    socket.emit("initiate-call", selectedChat, "video", offer, currentUser);
-  };
 
   useEffect(() => {
     if (!isNewChat && id) {
@@ -265,22 +217,10 @@ function Chat() {
           ) : null}
         </div>
         <div className="flex space-x-2 flex-shrink-0">
-          {selectedChat && selectedChat.chatType == "one_to_one" && (
-            <>
-              <button
-                className="p-2 hover:bg-gray-100 rounded-full transition"
-                onClick={handleAudioCall}
-              >
-                <Phone size={18} className="text-gray-600" />
-              </button>
-              <button
-                className="p-2 hover:bg-gray-100 rounded-full transition"
-                onClick={handleVideoCall}
-              >
-                <Video size={18} className="text-gray-600" />
-              </button>
-            </>
-          )}
+          <CallInitiationButtons
+            selectedChat={selectedChat}
+            currentUser={currentUser}
+          />
           <button
             className="p-2 hover:bg-gray-100 rounded-full transition"
             onClick={() => {
@@ -291,6 +231,7 @@ function Chat() {
                 navigate(`/chat/user/${user.id}/info`);
               }
             }}
+            aria-label="Chat info"
           >
             <Info size={18} className="text-gray-600" />
           </button>

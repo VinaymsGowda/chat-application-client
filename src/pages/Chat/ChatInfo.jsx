@@ -175,8 +175,6 @@ function ChatInfo() {
         if (response.status === 200) {
           setUsers(response.data.data);
         }
-      } else {
-        console.log("no chat selected");
       }
     } catch (error) {
       console.log("Failed to get new users", error);
@@ -303,8 +301,6 @@ function ChatInfo() {
 
   const handleAddNewMembers = async () => {
     try {
-      console.log("called");
-
       if (chat && selectedUsers.length > 0) {
         const selectedUsersWithIds = selectedUsers.map((item) => item.id);
 
@@ -334,8 +330,6 @@ function ChatInfo() {
           setSelectedUsers([]);
           socket.emit("new-chat", newUsers);
         }
-      } else {
-        console.log("Chat is required");
       }
     } catch (error) {
       console.log("Error adding new users", error);
