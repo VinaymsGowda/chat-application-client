@@ -40,8 +40,6 @@ const MessageInput = ({ sendMessage }) => {
     const file = e.target.files?.[0];
 
     if (file) {
-      console.log("Inside");
-
       if (file.size > MAX_FILE_SIZE) {
         showToast({
           type: "warning",

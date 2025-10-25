@@ -13,9 +13,7 @@ function SocketProvider({ children }) {
   const isAuthenticated = useSelector(selectIsAuthenticated);
   const currentUser = useSelector(selectUser);
 
-  const [socket] = useState(() =>
-    io(import.meta.env.VITE_SERVER_URL, { autoConnect: false })
-  );
+  const [socket] = useState(() => io(import.meta.env.VITE_SERVER_URL));
 
   useEffect(() => {
     if (isAuthenticated && currentUser?.id) {

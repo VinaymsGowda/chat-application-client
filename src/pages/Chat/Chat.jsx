@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { getMessagesByChatId } from "../../services/chatServices";
 import { cloudFrontUrl, getOtherUser } from "../../helper/utils";
@@ -11,9 +11,10 @@ import {
 } from "../../redux/features/Chat/Chat";
 import defaultProfile from "../../assets/default-profile.png";
 import groupProfile from "../../assets/group-profile.png";
-import { ArrowLeft, Info, Phone, Video } from "lucide-react";
+import { ArrowLeft, Info } from "lucide-react";
 import Message from "../../components/chatPageItems/Message";
 import MessageInput from "../../components/chatPageItems/MessageInput";
+import CallInitiationButtons from "../../components/chatPageItems/CallInitiationButtons";
 import { sendMessageService } from "../../services/messageService";
 import { useSocket } from "../../context/SocketContext";
 
@@ -216,16 +217,10 @@ function Chat() {
           ) : null}
         </div>
         <div className="flex space-x-2 flex-shrink-0">
-          {selectedChat && selectedChat.chatType != "self" && (
-            <>
-              <button className="p-2 hover:bg-gray-100 rounded-full transition">
-                <Phone size={18} className="text-gray-600" />
-              </button>
-              <button className="p-2 hover:bg-gray-100 rounded-full transition">
-                <Video size={18} className="text-gray-600" />
-              </button>
-            </>
-          )}
+          <CallInitiationButtons
+            selectedChat={selectedChat}
+            currentUser={currentUser}
+          />
           <button
             className="p-2 hover:bg-gray-100 rounded-full transition"
             onClick={() => {
@@ -236,6 +231,7 @@ function Chat() {
                 navigate(`/chat/user/${user.id}/info`);
               }
             }}
+            aria-label="Chat info"
           >
             <Info size={18} className="text-gray-600" />
           </button>

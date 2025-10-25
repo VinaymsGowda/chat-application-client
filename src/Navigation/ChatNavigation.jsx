@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useSocket } from "../context/SocketContext";
 import { Route, Routes, useNavigate, useLocation } from "react-router-dom";
 import Conversations from "../pages/Chat/Conversations";
@@ -17,6 +17,8 @@ import UserInfo from "../pages/Info/UserInfo";
 import { searchUsers } from "../services/userService";
 import CreateGroupModal from "../components/chatPageItems/CreateGroupModal";
 import { useToast } from "../context/ToastContext";
+
+import CallManager from "../components/CallOverlay/CallManager";
 
 function ChatNavigation() {
   const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
@@ -69,7 +71,7 @@ function ChatNavigation() {
 
   const getUsersForGroupChat = async () => {
     try {
-      const response = await searchUsers(createGroupUserSearch);
+      const response = await searchUsers(createGroupUserSearch, true);
       if (response.status === 200) {
         setUsers(response?.data?.data || []);
       }
@@ -166,6 +168,7 @@ function ChatNavigation() {
         createGroupUserSearch={createGroupUserSearch}
         setCreateGroupUserSearch={setCreateGroupUserSearch}
       />
+      <CallManager />
     </div>
   );
 }
