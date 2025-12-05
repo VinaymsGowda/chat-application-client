@@ -7,15 +7,49 @@ import React, {
 } from "react";
 import { useSocket } from "./SocketContext";
 import { useToast } from "./ToastContext";
+import {
+  HIGH_QUALITY_VIDEO_CONSTRAINTS,
+  HIGH_QUALITY_AUDIO_CONSTRAINTS,
+  DEFAULT_MEDIA_CONTROLS,
+  ICE_SERVERS,
+} from "../constants/mediaConstraints";
+import {
+  createPeerConnection,
+  setupIceCandidateHandler,
+  setupTrackHandler,
+  triggerRenegotiation,
+  replaceTrackInPeerConnection,
+  addTrackToPeerConnection,
+  cleanupPeerConnection,
+} from "../utils/webrtcUtils";
+import {
+  stopAndRemoveTrack,
+  getTrackFromStream,
+  updateRemoteMediaControlsFromStream,
+  cleanupStream,
+  cleanupStreamRef,
+  getMediaErrorMessage,
+} from "../utils/mediaTrackUtils";
 
 const MediaContext = createContext(null);
 
 export const MediaProvider = ({ children }) => {
   const [error, setError] = useState(null);
   const [callState, setCallState] = useState("idle"); // "idle" | "incoming" | "ongoing" | "calling"
+  const callStateRef = useRef(callState); // Ref to track current callState
   const [peerDetails, setPeerDetails] = useState(null);
+  const peerDetailsRef = useRef(peerDetails); // Ref to track current peerDetails
   const [incomingCallData, setIncomingCallData] = useState(null);
   const peerConnection = useRef(null);
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    callStateRef.current = callState;
+  }, [callState]);
+
+  useEffect(() => {
+    peerDetailsRef.current = peerDetails;
+  }, [peerDetails]);
   const toastContext = useToast();
   const showToast = toastContext?.showToast || (() => {});
   const [isRemoteVideoEnabled, setIsRemoteVideoEnabled] = useState(false);
@@ -25,15 +59,12 @@ export const MediaProvider = ({ children }) => {
   // Enhanced state management for call types and media controls
   const [callType, setCallType] = useState(null); // 'audio' | 'video' | null
   const [localMediaControls, setLocalMediaControls] = useState({
-    camera: false,
-    microphone: false, // Default to unmuted when starting a call
-    screenShare: false,
+    ...DEFAULT_MEDIA_CONTROLS,
+    microphone: true, // Default to unmuted when starting a call
   });
-  const [remoteMediaControls, setRemoteMediaControls] = useState({
-    camera: false,
-    microphone: false,
-    screenShare: false,
-  });
+  const [remoteMediaControls, setRemoteMediaControls] = useState(
+    DEFAULT_MEDIA_CONTROLS
+  );
   const [isCallUpgraded, setIsCallUpgraded] = useState(false);
 
   // Call timeout management
@@ -88,15 +119,33 @@ export const MediaProvider = ({ children }) => {
         const videoSender = senders.find((s) => s.track?.kind === "video");
 
         if (videoSender) {
-          await videoSender.replaceTrack(videoTrack);
+          // Replace the video track with screen share track
+          await replaceTrackInPeerConnection(
+            peerConnection.current,
+            "video",
+            videoTrack,
+            callState === "ongoing",
+            socket,
+            peerDetails
+          );
         } else {
           // No video sender exists, add new video track for screen sharing
-          peerConnection.current.addTrack(videoTrack, displayStream);
+          addTrackToPeerConnection(
+            peerConnection.current,
+            videoTrack,
+            displayStream,
+            callState === "ongoing",
+            socket,
+            peerDetails
+          );
         }
       }
 
-      // Update local video element
-      if (localVideo.current) localVideo.current.srcObject = displayStream;
+      // Keep local video element showing camera stream (not screen share)
+      // The screen share is sent to remote peer, but local preview should show camera
+      if (localVideo.current && localStream.current) {
+        localVideo.current.srcObject = localStream.current;
+      }
 
       // Listen for stop event to revert
       displayStream.getVideoTracks()[0].onended = () => {
@@ -126,7 +175,7 @@ export const MediaProvider = ({ children }) => {
   // Stop screen sharing and revert to camera
   const stopScreenShare = async () => {
     if (screenStream.current) {
-      screenStream.current.getTracks().forEach((track) => track.stop());
+      cleanupStream(screenStream.current);
       screenStream.current = null;
 
       // Revert to camera stream if camera was enabled, otherwise remove video track
@@ -140,11 +189,25 @@ export const MediaProvider = ({ children }) => {
             // Revert to camera if camera is enabled
             const videoTrack = localStream.current.getVideoTracks()[0];
             if (videoTrack) {
-              await sender.replaceTrack(videoTrack);
+              await replaceTrackInPeerConnection(
+                peerConnection.current,
+                "video",
+                videoTrack,
+                callState === "ongoing",
+                socket,
+                peerDetails
+              );
             }
           } else {
             // Remove video track if camera is disabled
-            await sender.replaceTrack(null);
+            await replaceTrackInPeerConnection(
+              peerConnection.current,
+              "video",
+              null,
+              callState === "ongoing",
+              socket,
+              peerDetails
+            );
           }
         }
       }
@@ -180,18 +243,153 @@ export const MediaProvider = ({ children }) => {
       // Reset enhanced state
       setCallType(null);
       setLocalMediaControls({
-        camera: false,
-        microphone: false, // Reset to unmuted for next call
-        screenShare: false,
+        ...DEFAULT_MEDIA_CONTROLS,
+        microphone: true, // Reset to unmuted for next call
       });
-      setRemoteMediaControls({
-        camera: false,
-        microphone: false,
-        screenShare: false,
-      });
+      setRemoteMediaControls(DEFAULT_MEDIA_CONTROLS);
       setIsCallUpgraded(false);
     }
   }, [callState]);
+
+  // Handle renegotiation offer (when remote peer upgrades to video)
+  // Defined before useEffect to avoid closure issues
+  const handleRenegotiationOffer = async (data) => {
+    console.log("handleRenegotiationOffer called with data:", data);
+
+    // Access current state values using refs to avoid stale closures
+    const currentCallState = callStateRef.current;
+    const currentPeerConnection = peerConnection.current;
+    const currentPeerDetails = peerDetailsRef.current;
+
+    console.log("Current callState (from ref):", currentCallState);
+    console.log("peerConnection exists:", !!currentPeerConnection);
+    console.log("peerDetails:", currentPeerDetails);
+
+    // Allow renegotiation if peer connection exists
+    // The peer connection being active is the source of truth, not callState
+    if (!currentPeerConnection) {
+      console.error("Cannot handle renegotiation: no active peer connection", {
+        hasPeerConnection: false,
+        callState: currentCallState,
+      });
+      return;
+    }
+
+    // Log warning if callState is unexpected, but proceed anyway
+    // Peer connection existence is the real indicator of an active call
+    if (currentCallState !== "ongoing" && currentCallState !== "calling") {
+      console.warn(
+        "Renegotiation received - call state is '" +
+          currentCallState +
+          "' but peer connection exists, proceeding with renegotiation",
+        {
+          callState: currentCallState,
+          hasPeerConnection: true,
+        }
+      );
+    } else {
+      console.log(
+        "Renegotiation received - call state is valid:",
+        currentCallState
+      );
+    }
+
+    try {
+      const offer = data.offer;
+      if (!offer || !offer.type || !offer.sdp) {
+        console.error("Invalid renegotiation offer:", offer);
+        return;
+      }
+
+      console.log("Received renegotiation offer, creating answer");
+      // Set the remote description with the new offer
+      await currentPeerConnection.setRemoteDescription(
+        new RTCSessionDescription(offer)
+      );
+
+      // Create and send answer
+      const answer = await currentPeerConnection.createAnswer();
+      await currentPeerConnection.setLocalDescription(answer);
+
+      // Send answer back to remote peer
+      if (socket && currentPeerDetails) {
+        const targetId = currentPeerDetails.id || currentPeerDetails;
+        console.log("Sending renegotiation answer to:", targetId);
+        socket.emit("renegotiation-answer", {
+          to: targetId,
+          answer: answer,
+        });
+      } else {
+        console.error("Cannot send answer: socket or peerDetails missing", {
+          socket: !!socket,
+          peerDetails: currentPeerDetails,
+        });
+      }
+    } catch (err) {
+      console.error("Error handling renegotiation offer:", err);
+      setError(err);
+      showToast({
+        title: "Error upgrading call. Please try again.",
+        type: "error",
+      });
+    }
+  };
+
+  // Handle renegotiation answer (response to our renegotiation offer)
+  // Defined before useEffect to avoid closure issues
+  const handleRenegotiationAnswer = async (data) => {
+    console.log("handleRenegotiationAnswer called with data:", data);
+
+    // Access current state values using refs to avoid stale closures
+    const currentCallState = callStateRef.current;
+    const currentPeerConnection = peerConnection.current;
+
+    console.log("Current callState (from ref):", currentCallState);
+    console.log("peerConnection exists:", !!currentPeerConnection);
+
+    if (!currentPeerConnection) {
+      console.error(
+        "Cannot handle renegotiation answer: no active peer connection",
+        {
+          hasPeerConnection: false,
+          callState: currentCallState,
+        }
+      );
+      return;
+    }
+
+    if (currentCallState !== "ongoing" && currentCallState !== "calling") {
+      console.warn(
+        "Renegotiation answer received but call state is not ongoing/calling, proceeding anyway",
+        {
+          callState: currentCallState,
+        }
+      );
+    }
+
+    try {
+      const answer = data.answer;
+      if (!answer || !answer.type || !answer.sdp) {
+        console.error("Invalid renegotiation answer:", answer);
+        return;
+      }
+
+      console.log("Received renegotiation answer, setting remote description");
+      // Set the remote description with the answer
+      await currentPeerConnection.setRemoteDescription(
+        new RTCSessionDescription(answer)
+      );
+      console.log("Renegotiation completed successfully!");
+    } catch (err) {
+      console.error("Error handling renegotiation answer:", err);
+      setError(err);
+      showToast({
+        title: "Error completing call upgrade. Please try again.",
+        type: "error",
+      });
+    }
+  };
+
   useEffect(() => {
     if (!socket) return;
 
@@ -203,6 +401,8 @@ export const MediaProvider = ({ children }) => {
     socket.on("call-ended", handleCallEnded);
     socket.on("participant-disconnected", handleParticipantDisconnected);
     socket.on("call-timeout", handleCallTimeout);
+    socket.on("renegotiation-offer", handleRenegotiationOffer);
+    socket.on("renegotiation-answer", handleRenegotiationAnswer);
 
     return () => {
       socket.off("incoming-call", handleIncomingCall);
@@ -213,6 +413,8 @@ export const MediaProvider = ({ children }) => {
       socket.off("call-ended", handleCallEnded);
       socket.off("participant-disconnected", handleParticipantDisconnected);
       socket.off("call-timeout", handleCallTimeout);
+      socket.off("renegotiation-offer", handleRenegotiationOffer);
+      socket.off("renegotiation-answer", handleRenegotiationAnswer);
     };
   }, [socket]);
 
@@ -261,67 +463,24 @@ export const MediaProvider = ({ children }) => {
 
     // Clean up local resources without notifying remote (they already left)
     try {
-      // Clean up all media tracks
-      if (localStream.current) {
-        localStream.current.getTracks().forEach((track) => {
-          track.stop();
-        });
-        localStream.current = null;
-      }
-
-      // Clean up screen sharing stream
-      if (screenStream.current) {
-        screenStream.current.getTracks().forEach((track) => {
-          track.stop();
-        });
-        screenStream.current = null;
-      }
-
-      // Clean up remote stream
-      if (remoteStream.current) {
-        remoteStream.current.getTracks().forEach((track) => {
-          track.stop();
-        });
-        remoteStream.current = null;
-      }
+      // Clean up all media streams
+      cleanupStreamRef(localStream);
+      cleanupStreamRef(screenStream);
+      cleanupStreamRef(remoteStream);
 
       // Close WebRTC peer connection
-      if (peerConnection.current) {
-        // Close all senders
-        const senders = peerConnection.current.getSenders();
-        senders.forEach((sender) => {
-          if (sender.track) {
-            sender.track.stop();
-          }
-        });
-
-        // Close all receivers
-        const receivers = peerConnection.current.getReceivers();
-        receivers.forEach((receiver) => {
-          if (receiver.track) {
-            receiver.track.stop();
-          }
-        });
-
-        // Close the peer connection
-        peerConnection.current.close();
-        peerConnection.current = null;
-      }
+      cleanupPeerConnection(peerConnection.current);
+      peerConnection.current = null;
 
       // Reset all state to idle
       setCallState("idle");
       setPeerDetails(null);
       setCallType(null);
       setLocalMediaControls({
-        camera: false,
-        microphone: false,
-        screenShare: false,
+        ...DEFAULT_MEDIA_CONTROLS,
+        microphone: true,
       });
-      setRemoteMediaControls({
-        camera: false,
-        microphone: false,
-        screenShare: false,
-      });
+      setRemoteMediaControls(DEFAULT_MEDIA_CONTROLS);
       setIsCallUpgraded(false);
       setIsRemoteVideoEnabled(false);
       setIncomingCallData(null);
@@ -351,8 +510,9 @@ export const MediaProvider = ({ children }) => {
       setCallState("incoming");
 
       // Set call type from incoming call data
-      if (data.callType) {
-        setCallType(data.callType);
+      console.log("data.type:", type);
+      if (type) {
+        setCallType(type);
       }
     } else {
       socket.emit("user-busy-event", {
@@ -413,88 +573,45 @@ export const MediaProvider = ({ children }) => {
   };
 
   const stopMediaDevices = () => {
-    if (localStream.current) {
-      localStream.current.getTracks().forEach((track) => track.stop());
-      localStream.current = null;
-    }
+    cleanupStreamRef(localStream);
   };
 
   async function makeCall() {
-    const configuration = {
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-    };
+    // Create peer connection
+    peerConnection.current = createPeerConnection();
 
-    peerConnection.current = new RTCPeerConnection(configuration);
+    // Setup ICE candidate handler
+    setupIceCandidateHandler(peerConnection.current, socket, peerDetails);
 
-    // Listen for local ICE candidates on the local RTCPeerConnection
+    // Setup track handler
+    setupTrackHandler(peerConnection.current, {
+      onRemoteStream: (stream) => {
+        remoteStream.current = stream;
+        if (remoteVideo.current) {
+          remoteVideo.current.srcObject = stream;
+        }
+      },
+      onRemoteMediaControlsUpdate: (controls) => {
+        setRemoteMediaControls((prev) => ({ ...prev, ...controls }));
+      },
+      onRemoteVideoEnabled: (enabled) => {
+        setIsRemoteVideoEnabled(enabled);
+      },
+    });
 
-    peerConnection.current.onicecandidate = (e) => {
-      const message = {
-        type: "candidate",
-        candidate: null,
-        to: peerDetails,
-      };
-      if (e.candidate) {
-        message.candidate = e.candidate.candidate;
-        message.sdpMid = e.candidate.sdpMid;
-        message.sdpMLineIndex = e.candidate.sdpMLineIndex;
-      }
-      socket.emit("ice-candidate", message);
-    };
+    // Add tracks to peer connection
+    const audioTrack = getTrackFromStream(localStream.current, "audio");
+    const videoTrack = getTrackFromStream(localStream.current, "video");
 
-    peerConnection.current.ontrack = (e) => {
-      const stream = e.streams[0];
-      remoteStream.current = stream;
-      if (remoteVideo.current) {
-        remoteVideo.current.srcObject = stream;
-      }
-
-      // Check if remote has any enabled video and audio tracks
-      const videoTracks = stream.getVideoTracks();
-      const audioTracks = stream.getAudioTracks();
-
-      const updateRemoteMediaControls = () => {
-        const hasEnabledVideo =
-          videoTracks.length > 0 && videoTracks.some((track) => track.enabled);
-        const hasEnabledAudio =
-          audioTracks.length > 0 && audioTracks.some((track) => track.enabled);
-
-        setRemoteMediaControls((prev) => ({
-          ...prev,
-          camera: hasEnabledVideo,
-          microphone: hasEnabledAudio,
-        }));
-
-        // Backward compatibility
-        setIsRemoteVideoEnabled(hasEnabledVideo);
-      };
-
-      // Initial check
-      updateRemoteMediaControls();
-
-      // Listen for remote media track changes
-      [...videoTracks, ...audioTracks].forEach((track) => {
-        track.onmute = updateRemoteMediaControls;
-        track.onunmute = updateRemoteMediaControls;
-        track.onended = updateRemoteMediaControls;
-        track.onchange = updateRemoteMediaControls;
-      });
-    };
-
-    // Always add both audio and video senders for future replaceTrack operations
-    const audioTrack = localStream.current.getAudioTracks()[0];
-    const videoTrack = localStream.current.getVideoTracks()[0];
-
-    // Add audio track (should always exist)
     if (audioTrack) {
       peerConnection.current.addTrack(audioTrack, localStream.current);
     }
 
-    // Add video track only if it exists
     if (videoTrack) {
       peerConnection.current.addTrack(videoTrack, localStream.current);
     }
 
+    // Create and set local offer
     const offer = await peerConnection.current.createOffer();
     await peerConnection.current.setLocalDescription(offer);
     return offer;
@@ -521,69 +638,40 @@ export const MediaProvider = ({ children }) => {
       throw new Error("Invalid offer: missing required properties (type, sdp)");
     }
 
-    const configuration = {
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-    };
+    // Create peer connection
+    peerConnection.current = createPeerConnection();
 
-    peerConnection.current = new RTCPeerConnection(configuration);
+    // Setup ICE candidate handler
+    setupIceCandidateHandler(peerConnection.current, socket, peerDetails);
 
-    peerConnection.current.onicecandidate = (e) => {
-      const message = {
-        type: "candidate",
-        candidate: null,
-        to: peerDetails,
-      };
-      if (e.candidate) {
-        message.candidate = e.candidate.candidate;
-        message.sdpMid = e.candidate.sdpMid;
-        message.sdpMLineIndex = e.candidate.sdpMLineIndex;
-      }
-      socket.emit("ice-candidate", message);
-    };
-
-    peerConnection.current.ontrack = (e) => {
-      const stream = e.streams[0];
-      remoteStream.current = stream;
-      if (remoteVideo.current) {
-        remoteVideo.current.srcObject = stream;
-      }
-      // Check if remote has any enabled video track
-      const videoTracks = stream.getVideoTracks();
-      const audioTracks = stream.getAudioTracks();
-
-      const updateRemoteMediaControls = () => {
-        const hasEnabledVideo =
-          videoTracks.length > 0 && videoTracks.some((track) => track.enabled);
-        const hasEnabledAudio =
-          audioTracks.length > 0 && audioTracks.some((track) => track.enabled);
-
-        setRemoteMediaControls((prev) => ({
-          ...prev,
-          camera: hasEnabledVideo,
-          microphone: hasEnabledAudio,
-        }));
-
-        // Backward compatibility
-        setIsRemoteVideoEnabled(hasEnabledVideo);
-      };
-
-      // Initial check
-      updateRemoteMediaControls();
-
-      // Listen for remote media track changes
-      [...videoTracks, ...audioTracks].forEach((track) => {
-        track.onmute = updateRemoteMediaControls;
-        track.onunmute = updateRemoteMediaControls;
-        track.onended = updateRemoteMediaControls;
-        track.onchange = updateRemoteMediaControls;
-      });
-    };
+    // Setup track handler
+    setupTrackHandler(peerConnection.current, {
+      onRemoteStream: (stream) => {
+        remoteStream.current = stream;
+        if (remoteVideo.current) {
+          remoteVideo.current.srcObject = stream;
+        }
+      },
+      onRemoteMediaControlsUpdate: (controls) => {
+        setRemoteMediaControls((prev) => ({ ...prev, ...controls }));
+      },
+      onRemoteVideoEnabled: (enabled) => {
+        setIsRemoteVideoEnabled(enabled);
+      },
+    });
 
     // Set initial local media controls based on call type
+
     const constraints =
       callType === "video"
-        ? { audio: true, video: true }
-        : { audio: true, video: false };
+        ? {
+            audio: HIGH_QUALITY_AUDIO_CONSTRAINTS,
+            video: HIGH_QUALITY_VIDEO_CONSTRAINTS,
+          }
+        : {
+            audio: HIGH_QUALITY_AUDIO_CONSTRAINTS,
+            video: false,
+          };
 
     await openMediaDevices(constraints);
 
@@ -624,7 +712,10 @@ export const MediaProvider = ({ children }) => {
       setCallState("calling");
 
       // Open audio-only media devices
-      await openMediaDevices({ audio: true, video: false });
+      await openMediaDevices({
+        audio: HIGH_QUALITY_AUDIO_CONSTRAINTS,
+        video: false,
+      });
       setLocalMediaControls((prev) => ({
         ...prev,
         camera: false,
@@ -653,7 +744,10 @@ export const MediaProvider = ({ children }) => {
       setCallState("calling");
 
       // Open video and audio media devices
-      await openMediaDevices({ audio: true, video: true });
+      await openMediaDevices({
+        audio: HIGH_QUALITY_AUDIO_CONSTRAINTS,
+        video: HIGH_QUALITY_VIDEO_CONSTRAINTS,
+      });
       setLocalMediaControls((prev) => ({
         ...prev,
         camera: true,
@@ -675,90 +769,229 @@ export const MediaProvider = ({ children }) => {
     }
   };
 
+  // Helper function to disable camera
+  const disableCamera = async (videoTrack) => {
+    // Disable and stop the video track to turn off camera light
+    stopAndRemoveTrack(localStream.current, videoTrack);
+
+    // Replace video track in peer connection with null
+    await replaceTrackInPeerConnection(
+      peerConnection.current,
+      "video",
+      null,
+      callState === "ongoing",
+      socket,
+      peerDetails
+    );
+
+    // Update local video element
+    if (localVideo.current) {
+      localVideo.current.srcObject = null;
+    }
+
+    // Get a new audio-only stream to ensure camera hardware is released
+    try {
+      const audioOnlyStream = await navigator.mediaDevices.getUserMedia({
+        audio: HIGH_QUALITY_AUDIO_CONSTRAINTS,
+        video: false,
+      });
+
+      // Stop old audio track if it exists
+      const oldAudioTrack = getTrackFromStream(localStream.current, "audio");
+      if (oldAudioTrack) {
+        oldAudioTrack.stop();
+      }
+
+      // Update local stream with new audio-only stream
+      localStream.current = audioOnlyStream;
+
+      // Update peer connection audio track
+      if (peerConnection.current) {
+        const newAudioTrack = getTrackFromStream(audioOnlyStream, "audio");
+        if (newAudioTrack) {
+          await replaceTrackInPeerConnection(
+            peerConnection.current,
+            "audio",
+            newAudioTrack,
+            false, // Don't renegotiate again
+            null,
+            null
+          );
+        }
+      }
+    } catch (err) {
+      console.error(
+        "Error getting audio-only stream after disabling camera:",
+        err
+      );
+      // Continue anyway - audio should still work
+    }
+  };
+
+  // Helper function to enable camera (upgrade from audio to video)
+  const enableCamera = async () => {
+    // Use high-quality video constraints when upgrading to video
+    const videoConstraints = {
+      audio: HIGH_QUALITY_AUDIO_CONSTRAINTS,
+      video: HIGH_QUALITY_VIDEO_CONSTRAINTS,
+    };
+    const newStream = await navigator.mediaDevices.getUserMedia(
+      videoConstraints
+    );
+
+    // Get the new tracks
+    const newVideoTrack = getTrackFromStream(newStream, "video");
+    const newAudioTrack = getTrackFromStream(newStream, "audio");
+
+    // Stop old tracks
+    if (localStream.current) {
+      cleanupStream(localStream.current);
+    }
+
+    // Update local stream
+    localStream.current = newStream;
+
+    // Update local video element
+    if (localVideo.current) {
+      localVideo.current.srcObject = newStream;
+    }
+
+    // Update peer connection tracks if call is ongoing
+    if (peerConnection.current) {
+      const senders = peerConnection.current.getSenders();
+
+      // Replace audio track
+      if (newAudioTrack) {
+        await replaceTrackInPeerConnection(
+          peerConnection.current,
+          "audio",
+          newAudioTrack,
+          false, // Don't renegotiate for audio replacement
+          null,
+          null
+        );
+      }
+
+      // Find existing video sender or add new track
+      const videoSender = senders.find(
+        (sender) => sender.track?.kind === "video"
+      );
+
+      if (videoSender) {
+        // Replace existing video track
+        await replaceTrackInPeerConnection(
+          peerConnection.current,
+          "video",
+          newVideoTrack,
+          callState === "ongoing",
+          socket,
+          peerDetails
+        );
+      } else {
+        // No video sender exists (audio call), add new video track
+        addTrackToPeerConnection(
+          peerConnection.current,
+          newVideoTrack,
+          newStream,
+          callState === "ongoing",
+          socket,
+          peerDetails
+        );
+      }
+    }
+
+    // Mark as upgraded if it was an audio call
+    if (callType === "audio") {
+      setCallType("video");
+      setIsCallUpgraded(true);
+      showToast({
+        title: "Call upgraded to video",
+        type: "success",
+      });
+    }
+  };
+
+  // Helper function to disable microphone
+  const disableMicrophone = async (audioTrack) => {
+    // Disable and stop the audio track to stop transmission
+    stopAndRemoveTrack(localStream.current, audioTrack);
+
+    // Replace audio track in peer connection with null
+    await replaceTrackInPeerConnection(
+      peerConnection.current,
+      "audio",
+      null,
+      callState === "ongoing",
+      socket,
+      peerDetails
+    );
+  };
+
+  // Helper function to enable microphone
+  const enableMicrophone = async () => {
+    // Get a new audio stream
+    const audioOnlyStream = await navigator.mediaDevices.getUserMedia({
+      audio: HIGH_QUALITY_AUDIO_CONSTRAINTS,
+      video: false,
+    });
+
+    const newAudioTrack = getTrackFromStream(audioOnlyStream, "audio");
+
+    // Add to local stream
+    if (localStream.current) {
+      localStream.current.addTrack(newAudioTrack);
+    } else {
+      localStream.current = audioOnlyStream;
+    }
+
+    // Add to peer connection
+    if (peerConnection.current) {
+      const senders = peerConnection.current.getSenders();
+      const audioSender = senders.find(
+        (sender) => sender.track?.kind === "audio"
+      );
+
+      if (audioSender) {
+        await replaceTrackInPeerConnection(
+          peerConnection.current,
+          "audio",
+          newAudioTrack,
+          callState === "ongoing",
+          socket,
+          peerDetails
+        );
+      } else {
+        addTrackToPeerConnection(
+          peerConnection.current,
+          newAudioTrack,
+          localStream.current,
+          callState === "ongoing",
+          socket,
+          peerDetails
+        );
+      }
+    }
+  };
+
   // Enhanced media control methods
   const toggleCamera = async () => {
     try {
       if (!localStream.current) return;
 
-      const videoTrack = localStream.current.getVideoTracks()[0];
       const newCameraState = !localMediaControls.camera;
+      const videoTrack = getTrackFromStream(localStream.current, "video");
 
       if (videoTrack) {
-        // Simply enable/disable existing video track
-        videoTrack.enabled = newCameraState;
+        if (newCameraState) {
+          // Re-enable existing video track
+          videoTrack.enabled = true;
+        } else {
+          // Disable camera
+          await disableCamera(videoTrack);
+        }
       } else if (newCameraState) {
         // Need to add video track - upgrade call from audio to video
-
-        // Check if camera is available before attempting to access
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const hasCamera = devices.some(
-          (device) => device.kind === "videoinput"
-        );
-
-        if (!hasCamera) {
-          throw new Error("No camera device found");
-        }
-
-        const videoConstraints = { video: true, audio: true };
-        const newStream = await navigator.mediaDevices.getUserMedia(
-          videoConstraints
-        );
-
-        // Get the new video track
-        const newVideoTrack = newStream.getVideoTracks()[0];
-        const newAudioTrack = newStream.getAudioTracks()[0];
-
-        // Stop old tracks
-        if (localStream.current) {
-          localStream.current.getTracks().forEach((track) => track.stop());
-        }
-
-        // Update local stream
-        localStream.current = newStream;
-
-        // Update local video element
-        if (localVideo.current) {
-          localVideo.current.srcObject = newStream;
-        }
-
-        // Update peer connection tracks if call is ongoing
-        if (peerConnection.current) {
-          const senders = peerConnection.current.getSenders();
-
-          // Replace audio track
-          const audioSender = senders.find(
-            (sender) => sender.track && sender.track.kind === "audio"
-          );
-
-          if (audioSender) {
-            await audioSender.replaceTrack(newAudioTrack);
-          }
-
-          // Find existing video sender or add new track
-          const videoSender = senders.find(
-            (sender) => sender.track?.kind === "video"
-          );
-
-          if (videoSender) {
-            // Replace existing video track
-            await videoSender.replaceTrack(newVideoTrack);
-          } else {
-            // No video sender exists (audio call), add new video track
-            peerConnection.current.addTrack(newVideoTrack, newStream);
-          }
-        }
-
-        // Mark as upgraded if it was an audio call
-        if (callType === "audio") {
-          setCallType("video");
-          setIsCallUpgraded(true);
-
-          // Show success message for call upgrade
-          showToast({
-            title: "Call upgraded to video",
-            type: "success",
-          });
-        }
+        await enableCamera();
       }
 
       setLocalMediaControls((prev) => ({
@@ -779,31 +1012,8 @@ export const MediaProvider = ({ children }) => {
       setError(err);
 
       // Provide user-friendly error handling
-      if (err.name === "NotAllowedError") {
-        showToast({
-          title: "Camera access denied. Please allow camera permissions.",
-          type: "error",
-        });
-      } else if (
-        err.name === "NotFoundError" ||
-        err.message.includes("No camera device")
-      ) {
-        showToast({
-          title:
-            "No camera device found. Please connect a camera and try again.",
-          type: "error",
-        });
-      } else if (err.name === "NotReadableError") {
-        showToast({
-          title: "Camera is already in use by another application.",
-          type: "error",
-        });
-      } else {
-        showToast({
-          title: "Failed to toggle camera. Please try again.",
-          type: "error",
-        });
-      }
+      const errorMessage = getMediaErrorMessage(err, "camera");
+      showToast(errorMessage);
     }
   };
 
@@ -811,11 +1021,20 @@ export const MediaProvider = ({ children }) => {
     try {
       if (!localStream.current) return;
 
-      const audioTrack = localStream.current.getAudioTracks()[0];
+      const audioTrack = getTrackFromStream(localStream.current, "audio");
       const newMicrophoneState = !localMediaControls.microphone;
 
       if (audioTrack) {
-        audioTrack.enabled = newMicrophoneState;
+        if (newMicrophoneState) {
+          // Re-enable existing audio track
+          audioTrack.enabled = true;
+        } else {
+          // Disable microphone
+          await disableMicrophone(audioTrack);
+        }
+      } else if (newMicrophoneState) {
+        // No audio track exists, get a new one
+        await enableMicrophone();
       }
 
       setLocalMediaControls((prev) => ({
@@ -834,6 +1053,8 @@ export const MediaProvider = ({ children }) => {
     } catch (err) {
       console.error("Error toggling microphone:", err);
       setError(err);
+      const errorMessage = getMediaErrorMessage(err, "microphone");
+      showToast(errorMessage);
     }
   };
 
@@ -892,67 +1113,24 @@ export const MediaProvider = ({ children }) => {
         });
       }
 
-      // Clean up all media tracks
-      if (localStream.current) {
-        localStream.current.getTracks().forEach((track) => {
-          track.stop();
-        });
-        localStream.current = null;
-      }
-
-      // Clean up screen sharing stream
-      if (screenStream.current) {
-        screenStream.current.getTracks().forEach((track) => {
-          track.stop();
-        });
-        screenStream.current = null;
-      }
-
-      // Clean up remote stream
-      if (remoteStream.current) {
-        remoteStream.current.getTracks().forEach((track) => {
-          track.stop();
-        });
-        remoteStream.current = null;
-      }
+      // Clean up all media streams
+      cleanupStreamRef(localStream);
+      cleanupStreamRef(screenStream);
+      cleanupStreamRef(remoteStream);
 
       // Close WebRTC peer connection
-      if (peerConnection.current) {
-        // Close all senders
-        const senders = peerConnection.current.getSenders();
-        senders.forEach((sender) => {
-          if (sender.track) {
-            sender.track.stop();
-          }
-        });
-
-        // Close all receivers
-        const receivers = peerConnection.current.getReceivers();
-        receivers.forEach((receiver) => {
-          if (receiver.track) {
-            receiver.track.stop();
-          }
-        });
-
-        // Close the peer connection
-        peerConnection.current.close();
-        peerConnection.current = null;
-      }
+      cleanupPeerConnection(peerConnection.current);
+      peerConnection.current = null;
 
       // Reset all state to idle
       setCallState("idle");
       setPeerDetails(null);
       setCallType(null);
       setLocalMediaControls({
-        camera: false,
-        microphone: false,
-        screenShare: false,
+        ...DEFAULT_MEDIA_CONTROLS,
+        microphone: true,
       });
-      setRemoteMediaControls({
-        camera: false,
-        microphone: false,
-        screenShare: false,
-      });
+      setRemoteMediaControls(DEFAULT_MEDIA_CONTROLS);
       setIsCallUpgraded(false);
       setIsRemoteVideoEnabled(false);
       setIncomingCallData(null);
