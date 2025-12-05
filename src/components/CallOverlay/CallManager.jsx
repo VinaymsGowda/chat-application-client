@@ -2,7 +2,10 @@ import IncomingCallOverlay from "./IncomingCallOverlay";
 import OngoingCallOverlay from "./OngoingCallOverlay";
 import CallingOverlay from "./CallingOverlay";
 import { useMedia } from "../../context/MediaProvider";
-
+import {
+  HIGH_QUALITY_AUDIO_CONSTRAINTS,
+  HIGH_QUALITY_VIDEO_CONSTRAINTS,
+} from "../../constants/mediaConstraints";
 import { useSocket } from "../../context/SocketContext";
 import { useSelector } from "react-redux";
 import { selectUser } from "../../redux/features/Auth/User";
@@ -21,6 +24,8 @@ const CallManager = () => {
   const currentUser = useSelector(selectUser);
 
   const handleAcceptCall = async (callData) => {
+    console.log("Call data:", callData);
+
     if (!callData) {
       console.error("No call data provided");
       return;
@@ -34,7 +39,10 @@ const CallManager = () => {
 
     try {
       if (callData.type === "audio") {
-        const stream = await openMediaDevices({ audio: true });
+        const stream = await openMediaDevices({
+          audio: HIGH_QUALITY_AUDIO_CONSTRAINTS,
+          video: false,
+        });
         if (stream && stream.active) {
           const answer = await createAnswer(callData.offer);
           socket.emit("send-answer", {
@@ -47,9 +55,10 @@ const CallManager = () => {
       }
 
       if (callData.type === "video") {
+        // Use high-quality video constraints for incoming video calls
         const stream = await openMediaDevices({
-          video: { width: 375, height: 350 },
-          audio: true,
+          video: HIGH_QUALITY_VIDEO_CONSTRAINTS,
+          audio: HIGH_QUALITY_AUDIO_CONSTRAINTS,
         });
         if (stream && stream.active) {
           const answer = await createAnswer(callData.offer);
