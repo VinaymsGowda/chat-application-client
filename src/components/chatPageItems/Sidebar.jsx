@@ -28,9 +28,10 @@ import groupProfile from "../../assets/group-profile.png";
 
 import { getOtherUser } from "../../helper/utils";
 import DialogWrapper from "../../wrappers/DialogWrapper";
-import ProfileModal from "./profileModal";
+
 import { updateUser } from "../../services/userService";
 import { useNavigate } from "react-router-dom";
+import ProfileModal from "./ProfileModal";
 
 const Sidebar = ({ setIsCreateGroupModalOpen }) => {
   const [isUserSearchOpen, setIsUserSearchOpen] = useState(false);
