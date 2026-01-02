@@ -13,11 +13,15 @@ function SocketProvider({ children }) {
   const isAuthenticated = useSelector(selectIsAuthenticated);
   const currentUser = useSelector(selectUser);
 
-  const [socket] = useState(() => io(import.meta.env.VITE_SERVER_URL));
+  const [socket] = useState(() =>
+    io(import.meta.env.VITE_SOCKET_URL, {
+      transports: ["websocket", "polling"],
+    })
+  );
 
   useEffect(() => {
     if (isAuthenticated && currentUser?.id) {
-      socket.connect();
+      socket.connect({});
       socket.on("connect", () => {
         socket.emit("user-room", currentUser.id);
       });

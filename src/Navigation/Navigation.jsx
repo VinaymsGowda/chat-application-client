@@ -1,12 +1,12 @@
 import React from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import LandingPage from "../pages/LandingPage";
-import { AuthPage } from "../pages/Auth/AuthPage";
 
 import ProfilePage from "../pages/Profile/ProfilePage";
 import ProtectedRoutes from "./ProtectedRoutes";
 import PublicRoutes from "./PublicRoutes";
 import ChatNavigation from "./ChatNavigation";
+import { AuthPage } from "../pages/auth/AuthPage";
 
 function Navigation() {
   return (
