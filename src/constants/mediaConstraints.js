@@ -25,4 +25,27 @@ export const DEFAULT_MEDIA_CONTROLS = {
 };
 
 // WebRTC ICE servers configuration
-export const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
+// STUN servers help discover public IP addresses
+// TURN servers relay traffic when direct connection fails (required for different networks)
+export const ICE_SERVERS = [
+  // Google's public STUN servers (free, no authentication required)
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "stun:stun2.l.google.com:19302" },
+
+  {
+    urls: "turn:openrelay.metered.ca:80",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+  {
+    urls: "turn:openrelay.metered.ca:443",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+  {
+    urls: "turn:openrelay.metered.ca:443?transport=tcp",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+];
