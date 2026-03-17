@@ -259,7 +259,7 @@ const Sidebar = ({ setIsCreateGroupModalOpen }) => {
                           </div>
                           <p className="text-xs text-gray-500 truncate">
                             {chat.latestMessage
-                              ? chat.latestMessage.content
+                              ? (chat.latestMessage.content.slice(0,10))
                               : isGroup
                               ? "Group chat"
                               : otherUser?.email}

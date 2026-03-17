@@ -1,16 +1,23 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import { Send, Image, Smile, Paperclip, X } from "lucide-react";
 import { useToast } from "../../context/ToastContext";
+import { useSocket } from "../../context/SocketContext";
+import { useSelector } from "react-redux";
+import { selectUser } from "../../redux/features/Auth/User";
 
-const MessageInput = ({ sendMessage }) => {
-  // Placeholder sendMessage function
+const TYPING_DEBOUNCE_MS = 2000;
 
+const MessageInput = ({ sendMessage, chatId }) => {
   const [message, setMessage] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const fileInputRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
+  const isTypingRef = useRef(false);
   const { showToast } = useToast();
-  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 5MB
+  const { socket } = useSocket();
+  const currentUser = useSelector(selectUser);
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
   // Utility to get file type from extension
   const getFileType = (file) => {
@@ -24,9 +31,38 @@ const MessageInput = ({ sendMessage }) => {
     return "other";
   };
 
+  const emitStopTyping = useCallback(() => {
+    if (isTypingRef.current && socket && chatId) {
+      socket.emit("stop-typing", { chatId, user: currentUser });
+      isTypingRef.current = false;
+    }
+  }, [socket, chatId, currentUser]);
+
+  const handleTyping = useCallback(
+    (value) => {
+      if (!socket || !chatId) return;
+
+      if (!isTypingRef.current && value.length > 0) {
+        isTypingRef.current = true;
+        socket.emit("typing", { chatId, user: currentUser });
+      }
+
+      // Reset debounce timer
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        emitStopTyping();
+      }, TYPING_DEBOUNCE_MS);
+    },
+    [socket, chatId, currentUser, emitStopTyping],
+  );
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (message.trim() === "" && !selectedFile) return;
+
+    // Stop typing before sending
+    clearTimeout(typingTimeoutRef.current);
+    emitStopTyping();
 
     const fileType = getFileType(selectedFile);
     await sendMessage(message, fileType, selectedFile);
@@ -43,7 +79,7 @@ const MessageInput = ({ sendMessage }) => {
       if (file.size > MAX_FILE_SIZE) {
         showToast({
           type: "warning",
-          title: "File size cannot exceed 5MB.",
+          title: "File size cannot exceed 10MB.",
         });
         clearFile();
         return;
@@ -57,7 +93,7 @@ const MessageInput = ({ sendMessage }) => {
         };
         reader.readAsDataURL(file);
       } else {
-        setImagePreview(null); // No preview for non-images
+        setImagePreview(null);
       }
     }
   };
@@ -125,7 +161,11 @@ const MessageInput = ({ sendMessage }) => {
           <input
             type="text"
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            onChange={(e) => {
+              setMessage(e.target.value);
+              handleTyping(e.target.value);
+            }}
+            onBlur={emitStopTyping}
             placeholder="Type a message..."
             className="w-full px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500 pr-10"
           />

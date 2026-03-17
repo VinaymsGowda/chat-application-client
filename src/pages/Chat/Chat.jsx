@@ -15,8 +15,11 @@ import { ArrowLeft, Info } from "lucide-react";
 import Message from "../../components/chatPageItems/Message";
 import MessageInput from "../../components/chatPageItems/MessageInput";
 import CallInitiationButtons from "../../components/chatPageItems/CallInitiationButtons";
+import TypingIndicator from "../../components/chatPageItems/TypingIndicator";
 import { sendMessageService } from "../../services/messageService";
 import { useSocket } from "../../context/SocketContext";
+
+const STREAMING_MSG_ID = "__ai_streaming__";
 
 function Chat() {
   const locationState = useLocation().state;
@@ -25,6 +28,13 @@ function Chat() {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [chatNotFound, setChatNotFound] = useState(false);
+
+  /** { user: { id, name, ... } } | null */
+  const [typingInfo, setTypingInfo] = useState(null);
+
+  /** Accumulates streaming AI chunks */
+  const streamingTextRef = useRef("");
+
   const dispatch = useDispatch();
   const selectedChat = useSelector(selectSelectedChat);
   const { id } = useParams();
@@ -60,20 +70,68 @@ function Chat() {
       setLoading(false);
     }
   };
+
+  // ── Socket listeners ──────────────────────────────────────────────────────
   useEffect(() => {
     const handleMessageReceived = (newMessage) => {
       if (id && id === newMessage.chatId) {
-        setMessages((prev) => [...prev, newMessage]);
+        // Remove the streaming placeholder (if any) and add the saved message
+        setMessages((prev) =>
+          [...prev.filter((m) => m.id !== STREAMING_MSG_ID), newMessage],
+        );
+        streamingTextRef.current = "";
+      }
+    };
+
+    // Streaming chunk from AI — update the placeholder bubble in place
+    const handleAiChunk = ({ chatId, chunk }) => {
+      if (chatId !== id) return;
+      streamingTextRef.current += chunk;
+      const streamed = streamingTextRef.current;
+
+      setMessages((prev) => {
+        const withoutPlaceholder = prev.filter(
+          (m) => m.id !== STREAMING_MSG_ID,
+        );
+        return [
+          ...withoutPlaceholder,
+          {
+            id: STREAMING_MSG_ID,
+            chatId,
+            content: streamed,
+            type: "text",
+            senderId: null, // will be resolved when message-received fires
+            createdAt: new Date().toISOString(),
+            _isStreaming: true,
+          },
+        ];
+      });
+    };
+
+    const handleTyping = (data) => {
+      if (data?.chatId === id && data?.user?.id !== currentUser?.id) {
+        setTypingInfo(data);
+      }
+    };
+
+    const handleStopTyping = (data) => {
+      if (data?.chatId === id) {
+        setTypingInfo(null);
       }
     };
 
     socket?.on("message-received", handleMessageReceived);
+    socket?.on("ai-message-chunk", handleAiChunk);
+    socket?.on("typing", handleTyping);
+    socket?.on("stop-typing", handleStopTyping);
 
-    // Cleanup to prevent multiple listeners
     return () => {
       socket?.off("message-received", handleMessageReceived);
+      socket?.off("ai-message-chunk", handleAiChunk);
+      socket?.off("typing", handleTyping);
+      socket?.off("stop-typing", handleStopTyping);
     };
-  }, [id, isNewChat]);
+  }, [id, currentUser?.id, socket]);
 
   useEffect(() => {
     if (!isNewChat && id) {
@@ -84,6 +142,9 @@ function Chat() {
       setChatNotFound(false);
       setLoading(false);
     }
+    // Reset streaming state when switching chats
+    streamingTextRef.current = "";
+    setTypingInfo(null);
   }, [id, socket]);
 
   const getChatMeta = () => {
@@ -111,10 +172,10 @@ function Chat() {
   const groupMembers = isGroup ? selectedChat.users : [];
   const messagesEndRef = useRef(null);
 
-  // Scroll to bottom on new messages
+  // Scroll to bottom on new messages or while streaming
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, typingInfo]);
 
   const sendMessage = async (message, messageType, selectedFile = null) => {
     const data = {
@@ -139,7 +200,6 @@ function Chat() {
         return [...prev, newMessage];
       });
       if (isNewChat) {
-        // Refresh the chat list after sending a new message
         dispatch(fetchChats(""));
         socket.emit("new-chat", selectedChat.users);
         navigate(`/chat/${newMessage.chatId}`);
@@ -148,6 +208,7 @@ function Chat() {
       socket?.emit("new-message", chatId, newMessage);
     }
   };
+
   const handleBackClick = () => {
     dispatch(setSelectedChat(null));
     setChatNotFound(false);
@@ -237,6 +298,7 @@ function Chat() {
           </button>
         </div>
       </div>
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-6 py-4 bg-gray-50">
         {!messages || messages.length === 0 ? (
@@ -256,7 +318,7 @@ function Chat() {
             {messages.map((message) => {
               const isCurrentUser = message.senderId === currentUser?.id;
               const sender = selectedChat?.users?.find(
-                (user) => user.id === message.senderId
+                (user) => user.id === message.senderId,
               );
               return (
                 <Message
@@ -268,13 +330,23 @@ function Chat() {
                 />
               );
             })}
+
+            {/* Generalized typing indicator — shown for any remote user */}
+            {typingInfo?.user && (
+              <TypingIndicator userName={typingInfo.user.name} />
+            )}
+
             <div ref={messagesEndRef} />
           </div>
         )}
       </div>
+
       {/* Message Input */}
-      <div className=" border-t bg-white">
-        <MessageInput sendMessage={sendMessage} />
+      <div className="border-t bg-white">
+        <MessageInput
+          sendMessage={sendMessage}
+          chatId={selectedChat?.id || id}
+        />
       </div>
     </div>
   );
