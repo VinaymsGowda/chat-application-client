@@ -101,9 +101,9 @@ const OngoingCallOverlay = ({ calleeName, onEndCall }) => {
 
       {!isMinimized && (
         <div className="flex-1 min-h-0">
-          <div className="grid grid-cols-[1fr_16rem] gap-2 h-full w-full">
+            <div className="flex flex-col lg:grid lg:grid-cols-[1fr_16rem] gap-2 h-full w-full">
             {/* Remote video section */}
-            <div className="bg-black rounded-lg overflow-hidden relative">
+            <div className="flex-1 bg-black rounded-lg overflow-hidden relative min-h-[50vh] lg:min-h-0">
               {/* Always render video element for audio playback, but conditionally show video */}
               <video
                 disablePictureInPicture
@@ -172,9 +172,9 @@ const OngoingCallOverlay = ({ calleeName, onEndCall }) => {
             </div>
 
             {/* Sidebar (local video + controls) */}
-            <div className="grid grid-rows-[auto_1fr] h-full bg-gray-800 rounded-lg p-4 overflow-hidden">
+            <div className="flex flex-col lg:grid lg:grid-rows-[auto_1fr] lg:h-full bg-gray-800 rounded-lg p-4 overflow-hidden shrink-0 gap-4 lg:gap-0">
               {/* Controls */}
-              <div className="flex items-center justify-center gap-2 mb-4">
+              <div className="flex flex-wrap items-center justify-center gap-2 lg:mb-4">
                 <button
                   onClick={toggleCamera}
                   className={`p-2 rounded transition-colors ${
@@ -236,7 +236,7 @@ const OngoingCallOverlay = ({ calleeName, onEndCall }) => {
               </div>
 
               {/* Local Preview */}
-              <div className="self-end w-full aspect-video rounded-lg overflow-hidden border-2 border-green-500 shadow-lg relative">
+              <div className="self-center lg:self-end w-48 lg:w-full aspect-video rounded-lg overflow-hidden border-2 border-green-500 shadow-lg relative mx-auto lg:mx-0">
                 {localMediaControls.camera || localMediaControls.screenShare ? (
                   <video
                     disablePictureInPicture
