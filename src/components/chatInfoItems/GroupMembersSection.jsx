@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import defaultProfile from "../../assets/default-profile.png";
 import { UserPlus, UserMinus } from "lucide-react";
-import { MessageCircle } from "lucide-react";
+import { MessageCircle, BadgeCheck } from "lucide-react";
 import { useToast } from "../../context/ToastContext";
 import { useSelector } from "react-redux";
 import { selectUser } from "../../redux/features/Auth/User";
@@ -107,6 +107,12 @@ const GroupMembersSection = ({
                         <span className="text-xs text-gray-400 ml-1">
                           (You)
                         </span>
+                      )}
+                      {member.type === "AI" && (
+                        <BadgeCheck
+                          size={14}
+                          className="inline-block ml-1 text-blue-500 fill-blue-500"
+                        />
                       )}
                     </p>
                     {selectedChat.groupAdminId === member.id && (

@@ -11,7 +11,7 @@ import {
 } from "../../redux/features/Chat/Chat";
 import defaultProfile from "../../assets/default-profile.png";
 import groupProfile from "../../assets/group-profile.png";
-import { ArrowLeft, Info } from "lucide-react";
+import { ArrowLeft, Info, BadgeCheck } from "lucide-react";
 import Message from "../../components/chatPageItems/Message";
 import MessageInput from "../../components/chatPageItems/MessageInput";
 import CallInitiationButtons from "../../components/chatPageItems/CallInitiationButtons";
@@ -267,10 +267,17 @@ function Chat() {
             e.target.src = isGroup ? groupProfile : defaultProfile;
           }}
         />
-        <div className="flex-grow min-w-0">
+        <div className="flex items-center gap-2 flex-grow min-w-0">
+          <div>
           <h3 className="font-semibold text-lg text-gray-900 truncate">
             {title} {selectedChat?.chatType === "self" && " (You)"}
           </h3>
+          </div>
+            {selectedChat?.chatType === "AI" && (
+              <BadgeCheck
+                className="inline-block ml-1 text-blue-500 "
+              />
+            )}
           {isGroup ? (
             <p className="text-xs text-gray-500 truncate">
               {groupMembers.length} participants

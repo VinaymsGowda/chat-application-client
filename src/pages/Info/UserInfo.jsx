@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { fetchUserById } from "../../services/userService";
 import defaultProfile from "../../assets/default-profile.png";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, BadgeCheck } from "lucide-react";
 import { cloudFrontUrl } from "../../helper/utils";
 
 function UserInfo() {
@@ -115,10 +115,13 @@ function UserInfo() {
                   }}
                 />
               </div>
-              <div>
+              <div className="flex items-center justify-center gap-2">
                 <h1 className="text-3xl font-bold text-gray-900">
                   {user.name}
                 </h1>
+                {
+                  user.type=="AI" && <BadgeCheck size={25} className="inline-block ml-1 text-blue-500 "/>
+                }
                 <p className="text-gray-600 text-lg">{user.email}</p>
               </div>
             </div>

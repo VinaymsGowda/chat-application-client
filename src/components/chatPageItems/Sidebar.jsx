@@ -10,6 +10,7 @@ import {
   LogOut,
   User,
   Pencil,
+  BadgeCheck,
 } from "lucide-react";
 
 import { useDispatch, useSelector } from "react-redux";
@@ -201,7 +202,8 @@ const Sidebar = ({ setIsCreateGroupModalOpen }) => {
               <ul>
                 {chats.map((chat) => {
                   const otherUser = getOtherUser(chat, currentUser);
-
+                  console.log("Other user ",otherUser);
+                  
                   const isGroup = chat.chatType === "group";
 
                   return (
@@ -241,9 +243,15 @@ const Sidebar = ({ setIsCreateGroupModalOpen }) => {
                         <div className="flex-grow min-w-0">
                           <div className="flex justify-between items-center">
                             <h3 className="text-sm font-medium truncate">
-                              {isGroup ? chat.groupName : otherUser?.name}
-                              {chat.chatType === "self" && " (You)"}
-                            </h3>
+                                {isGroup ? chat.groupName : otherUser?.name}
+                                {chat.chatType === "self" && " (You)"}
+                                {chat.chatType === "AI" && (
+                                  <BadgeCheck
+                                  size={20}
+                                    className="inline-block ml-1 text-blue-500 "
+                                  />
+                                )}
+                              </h3>
                             <span className="text-xs text-gray-500">
                               {chat.latestMessage
                                 ? new Date(
@@ -299,12 +307,17 @@ const Sidebar = ({ setIsCreateGroupModalOpen }) => {
                           e.target.src = defaultProfile;
                         }}
                       />
-                      <div className="flex-grow min-w-0">
+                      <div className="flex-grow flex items-center gap-2 min-w-0">
                         <div className="flex justify-between items-center">
                           <span className="text-sm font-medium truncate">
                             {user.name} {user.id === currentUser.id && " (You)"}
                           </span>
                         </div>
+                            {user.type === "AI" && (
+                              <BadgeCheck
+                                
+                              />
+                            )}
                         <span className="text-xs text-gray-500 truncate">
                           {user.email}
                         </span>
